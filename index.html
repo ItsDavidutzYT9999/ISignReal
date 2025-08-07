@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iOS App Signer</title>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8 col-lg-6">
+                <div class="card">
+                    <div class="card-header text-center">
+                        <h2><i class="fas fa-mobile-alt me-2"></i>iOS App Signer</h2>
+                        <p class="mb-0 text-muted">Sign your iOS applications with custom certificates</p>
+                    </div>
+                    <div class="card-body">
+                        <form id="signingForm" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label for="ipa" class="form-label">
+                                    <i class="fas fa-archive me-2"></i>IPA File
+                                </label>
+                                <input type="file" class="form-control" id="ipa" name="ipa" accept=".ipa" required>
+                                <div class="form-text">Select the .ipa file you want to sign</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="p12" class="form-label">
+                                    <i class="fas fa-certificate me-2"></i>P12 Certificate
+                                </label>
+                                <input type="file" class="form-control" id="p12" name="p12" accept=".p12" required>
+                                <div class="form-text">Select your iOS development certificate (.p12)</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="provision" class="form-label">
+                                    <i class="fas fa-file-contract me-2"></i>Provisioning Profile
+                                </label>
+                                <input type="file" class="form-control" id="provision" name="provision" accept=".mobileprovision" required>
+                                <div class="form-text">Select your provisioning profile (.mobileprovision)</div>
+                            </div>
+
+                            <div class="mb-4">
+                                <label for="password" class="form-label">
+                                    <i class="fas fa-key me-2"></i>Certificate Password
+                                </label>
+                                <input type="password" class="form-control" id="password" name="password" required>
+                                <div class="form-text">Enter the password for your P12 certificate</div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-signature me-2"></i>Sign Application
+                            </button>
+                        </form>
+
+                        <!-- Progress indicator -->
+                        <div id="progressContainer" class="mt-3" style="display: none;">
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span>Signing application...</span>
+                            </div>
+                        </div>
+
+                        <!-- Result container -->
+                        <div id="resultContainer" class="mt-4" style="display: none;">
+                            <div class="alert alert-success">
+                                <h5><i class="fas fa-check-circle me-2"></i>Signing Successful!</h5>
+                                <p id="successMessage" class="mb-3">Your application has been signed successfully.</p>
+                                <div class="d-grid gap-2" id="downloadButtons">
+                                    <!-- OTA Installation button -->
+                                    <a id="otaInstallLink" href="#" class="btn btn-success">
+                                        <i class="fas fa-cloud-download-alt me-2"></i>Install on iOS Device (OTA)
+                                    </a>
+                                    <!-- Copy OTA link button -->
+                                    <button type="button" id="copyOtaBtn" class="btn btn-outline-secondary" onclick="copyOtaLink()">
+                                        <i class="fas fa-copy me-2"></i>Copy OTA Install Link
+                                    </button>
+                                </div>
+                                <div class="form-text mt-3">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    <span id="installInstructions">Open the OTA link on your iOS device to install the signed app directly.</span>
+                                </div>
+                                <!-- App info section -->
+                                <div id="appInfoSection" class="mt-3" style="display: none;">
+                                    <hr>
+                                    <small class="text-muted" id="appInfoContent">
+                                        <!-- App info will be populated here -->
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Error container -->
+                        <div id="errorContainer" class="mt-4" style="display: none;">
+                            <div class="alert alert-danger">
+                                <h5><i class="fas fa-exclamation-triangle me-2"></i>Signing Failed</h5>
+                                <p id="errorMessage" class="mb-0"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentOtaUrl = '';
+
+        document.getElementById('signingForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            console.log('Form submission started');
+            
+            const formData = new FormData(this);
+            const progressContainer = document.getElementById('progressContainer');
+            const resultContainer = document.getElementById('resultContainer');
+            const errorContainer = document.getElementById('errorContainer');
+            
+            // Reset display states
+            progressContainer.style.display = 'block';
+            resultContainer.style.display = 'none';
+            errorContainer.style.display = 'none';
+            
+            try {
+                // Validate required files
+                const ipaFile = document.getElementById('ipa').files[0];
+                const p12File = document.getElementById('p12').files[0];
+                const provisionFile = document.getElementById('provision').files[0];
+                const password = document.getElementById('password').value;
+                
+                console.log('Files selected:', {
+                    ipa: ipaFile ? ipaFile.name : 'none',
+                    p12: p12File ? p12File.name : 'none', 
+                    provision: provisionFile ? provisionFile.name : 'none',
+                    passwordSet: !!password
+                });
+                
+                if (!ipaFile) {
+                    throw new Error('Please select an IPA file');
+                }
+                if (!p12File) {
+                    throw new Error('Please select a P12 certificate file');
+                }
+                if (!provisionFile) {
+                    throw new Error('Please select a provisioning profile');
+                }
+                if (!password.trim()) {
+                    throw new Error('Please enter the certificate password');
+                }
+                
+                // Validate file extensions
+                if (!ipaFile.name.toLowerCase().endsWith('.ipa')) {
+                    throw new Error('IPA file must have .ipa extension');
+                }
+                if (!p12File.name.toLowerCase().endsWith('.p12')) {
+                    throw new Error('Certificate must have .p12 extension');
+                }
+                if (!provisionFile.name.toLowerCase().endsWith('.mobileprovision')) {
+                    throw new Error('Provisioning profile must have .mobileprovision extension');
+                }
+                
+                // Check file sizes before upload
+                if (ipaFile.size > 1024 * 1024 * 1024) {
+                    throw new Error('IPA file too large (max 1GB)');
+                }
+                if (p12File.size > 10 * 1024 * 1024) {
+                    throw new Error('P12 certificate too large (max 10MB)');
+                }
+                if (provisionFile.size > 1024 * 1024) {
+                    throw new Error('Provisioning profile too large (max 1MB)');
+                }
+
+                console.log('Starting fetch request...');
+                
+                // Create timeout controller for better browser compatibility
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => {
+                    console.log('Request timeout triggered');
+                    controller.abort();
+                }, 300000); // 5 minutes timeout
+                
+                const response = await fetch('/sign', {
+                    method: 'POST',
+                    body: formData,
+                    signal: controller.signal
+                });
+                
+                console.log('Fetch completed, response status:', response.status);
+                clearTimeout(timeoutId);
+                
+                progressContainer.style.display = 'none';
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    let errorMessage = 'Server error';
+                    try {
+                        const errorJson = JSON.parse(errorText);
+                        errorMessage = errorJson.error + (errorJson.details ? ': ' + errorJson.details : '');
+                    } catch {
+                        errorMessage = errorText || 'Unknown server error';
+                    }
+                    document.getElementById('errorMessage').textContent = errorMessage;
+                    errorContainer.style.display = 'block';
+                    return;
+                }
+
+                const result = await response.json();
+                console.log('Success response:', result);
+                
+                // Update success message
+                document.getElementById('successMessage').textContent = result.message || 'Your application has been signed successfully.';
+                
+                // Handle OTA installation link
+                const otaLink = document.getElementById('otaInstallLink');
+                const copyOtaBtn = document.getElementById('copyOtaBtn');
+                if (result.itms_services_url) {
+                    otaLink.href = result.itms_services_url;
+                    currentOtaUrl = result.itms_services_url;
+                    document.getElementById('installInstructions').textContent = 'Open the OTA link on your iOS device to install the signed app directly.';
+                }
+                
+                // Show app info if available
+                const appInfoSection = document.getElementById('appInfoSection');
+                const appInfoContent = document.getElementById('appInfoContent');
+                if (result.app_info) {
+                    appInfoContent.innerHTML = `
+                        <strong>App Name:</strong> ${result.app_info.name}<br>
+                        <strong>Bundle ID:</strong> ${result.app_info.bundle_id}<br>
+                        <strong>File Size:</strong> ${result.app_info.size_mb} MB
+                    `;
+                    appInfoContent.innerHTML += `<br><strong>Installation:</strong> OTA (Over-The-Air) via ITMS services`;
+                    appInfoSection.style.display = 'block';
+                }
+                
+                resultContainer.style.display = 'block';
+                
+            } catch (error) {
+                console.error('Error caught in form handler:', error);
+                
+                progressContainer.style.display = 'none';
+                let errorMessage;
+                
+                if (error.name === 'AbortError') {
+                    errorMessage = 'Request timed out. Please try again with a smaller file or check your connection.';
+                } else if (error.message) {
+                    errorMessage = error.message;
+                } else {
+                    errorMessage = 'An unexpected error occurred. Please try again.';
+                }
+                
+                document.getElementById('errorMessage').textContent = errorMessage;
+                errorContainer.style.display = 'block';
+            }
+        });
+
+        function copyOtaLink() {
+            if (currentOtaUrl) {
+                navigator.clipboard.writeText(currentOtaUrl).then(() => {
+                    const btn = document.getElementById('copyOtaBtn');
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-check me-2"></i>Copied!';
+                    btn.classList.remove('btn-outline-secondary');
+                    btn.classList.add('btn-success');
+                    setTimeout(() => {
+                        btn.innerHTML = originalText;
+                        btn.classList.remove('btn-success');
+                        btn.classList.add('btn-outline-secondary');
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy OTA link: ', err);
+                    alert('Failed to copy link to clipboard');
+                });
+            }
+        }
+
+
+    </script>
+</body>
+</html>
